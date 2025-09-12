@@ -19,3 +19,21 @@ mvnw.cmd
 *.class
 *.jar
 *.war
+
+# Rapports de couverture et d'analyse
+/coverage/
+/.sonar/
+/.scannerwork/
+
+# Fichiers de configuration locale
+application-local.properties
+
+# Fichiers de build Maven
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties

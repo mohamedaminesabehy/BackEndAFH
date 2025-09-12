@@ -1,12 +1,21 @@
 package com.afh.gescomp.controller;
 
 import com.afh.gescomp.model.primary.Fournisseur;
+import com.afh.gescomp.model.primary.Marche;
 import com.afh.gescomp.service.FournisseurService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -16,19 +25,36 @@ import java.util.Map;
 @RequestMapping("/api/fournisseur")
 public class FournisseurController {
 
+    private static final Logger logger = LoggerFactory.getLogger(FournisseurController.class);
+
 
     @Autowired
     public FournisseurService fournisseurService;
 
-
-    @GetMapping
-    public ResponseEntity<?> getFournisseurs() {
-        Map<String, Object> map = new LinkedHashMap<>();
-        List<Fournisseur> fournisseurList = fournisseurService.getFournisseurs();
-        return new ResponseEntity<>(fournisseurList, HttpStatus.OK);
+    @RequestMapping(method = RequestMethod.GET)
+    public ResponseEntity<Page<Fournisseur>>getFournisseurs(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String fournisseurDesignation,
+            @RequestParam(required = false) String designation
+    ) {
+        Pageable pageable = new PageRequest(page, size);
+        Page<Fournisseur> fournisseurs = fournisseurService.getAllFournisseursByNumFourn(pageable,fournisseurDesignation, designation);
+        return new ResponseEntity<>(fournisseurs, HttpStatus.OK);
     }
 
-    @PostMapping("/save")
+    @RequestMapping(value = "/getFournisseursForSearch", method = RequestMethod.GET)
+    public Page<Fournisseur>getFournisseursForSearch(@RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size,@RequestParam(required = false) String filter) {
+        Pageable pageable = new PageRequest(page, size);
+        if(filter != null && !filter.isEmpty()){
+            return fournisseurService.searchFournisseur(new PageRequest(page, size), filter);
+        } else {
+            return fournisseurService.getFournisseurs(page, size);
+        }
+    }
+
+
+    @RequestMapping(value = "/save", method = RequestMethod.POST)
     public ResponseEntity<?> saveFournisseur(@RequestBody Fournisseur fournisseur) {
         Map<String, Object> map = new LinkedHashMap<String, Object>();
         fournisseurService.save(fournisseur);
@@ -37,29 +63,16 @@ public class FournisseurController {
         return new ResponseEntity<>(map, HttpStatus.CREATED);
     }
 
-    @GetMapping("/get/{id}")
-    public ResponseEntity<?> getFournisseurById(@PathVariable Long id) {
-        Map<String, Object> map = new LinkedHashMap<String, Object>();
-        try {
-            Fournisseur fournisseur = fournisseurService.findById(id);
-
-            if (fournisseur == null) {
-                map.put("status", 0);
-                map.put("message", "Data is not found");
-                return new ResponseEntity<>(map, HttpStatus.NOT_FOUND);
-            }
-
-            map.put("status", 1);
-            map.put("data", fournisseur);
-            return new ResponseEntity<>(map, HttpStatus.OK);
-            } catch (Exception ex) {
-            map.put("status", 0);
-            map.put("message", "An error occurred while processing the request");
-            return new ResponseEntity<>(map, HttpStatus.INTERNAL_SERVER_ERROR);
-            }
+    @RequestMapping(value = "/get/{id}", method = RequestMethod.GET)
+    public ResponseEntity<Fournisseur> getFournisseurById(@PathVariable Long id) {
+        Fournisseur fournisseur = fournisseurService.findById(id);
+        if (fournisseur == null) {
+            return ResponseEntity.ok(null);
+        }
+        return ResponseEntity.ok(fournisseur);
     }
 
-    @DeleteMapping("/delete/{id}")
+    @RequestMapping(value = "/delete/{id}", method = RequestMethod.DELETE)
     public ResponseEntity<?> deleteFournisseur(@PathVariable Long id) {
         Map<String, Object> map = new LinkedHashMap<String, Object>();
             Fournisseur fournisseur = fournisseurService.findById(id);
@@ -71,7 +84,7 @@ public class FournisseurController {
         }
         try {
             // Supprimez le fournisseur
-            fournisseurService.delete(fournisseur);
+            fournisseurService.deleteFournisseur(fournisseur);
             map.put("status", 1);
             map.put("message", "Record is deleted successfully!");
             return new ResponseEntity<>(map, HttpStatus.OK);
@@ -83,16 +96,15 @@ public class FournisseurController {
         }
     }
 
-    @PutMapping("/update/{id}")
+    @RequestMapping(value = "/update/{id}", method = RequestMethod.PUT)
     public ResponseEntity<?> updateFournisseurById(@PathVariable Long id, @RequestBody Fournisseur fournisseurDetail) {
         Fournisseur fournisseur = fournisseurService.findById(id);
 
         if (fournisseur == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("status", 0, "message", "Data is not found"));
+                    .body(createDataNotFoundResponse());
         }
         try {
-            // Mettez à jour les détails du fournisseur
             fournisseur.setNumFourn(fournisseurDetail.getNumFourn());
             fournisseur.setCodePays(fournisseurDetail.getCodePays());
             fournisseur.setNumGouv(fournisseurDetail.getNumGouv());
@@ -100,26 +112,88 @@ public class FournisseurController {
             fournisseur.setContact(fournisseurDetail.getContact());
             fournisseur.setAdresse(fournisseurDetail.getAdresse());
             fournisseur.setVille(fournisseurDetail.getVille());
+            fournisseur.setCodePostal(fournisseurDetail.getCodePostal());
+            fournisseur.setTel(fournisseurDetail.getTel());
+            fournisseur.setFax(fournisseurDetail.getFax());
+            fournisseur.setEmail(fournisseurDetail.getEmail());
+            fournisseur.setWeb(fournisseurDetail.getWeb());
+            fournisseur.setStructCap(fournisseurDetail.getStructCap());
+            fournisseur.setActivite(fournisseurDetail.getActivite());
+            fournisseur.setRcs(fournisseurDetail.getRcs());
+            fournisseur.setMatCnss(fournisseurDetail.getMatCnss());
+            fournisseur.setDesignationFr(fournisseurDetail.getDesignationFr());
+            fournisseur.setMatriculeFisc(fournisseurDetail.getMatriculeFisc());
+
             fournisseurService.save(fournisseur);
-            return ResponseEntity.ok(Map.of("status", 1, "data", fournisseur));
+            return ResponseEntity.ok(createResponse(fournisseur));
         } catch (Exception ex) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(Map.of("status", 0, "message", "An error occurred while processing the request"));
+                    .body(create_INTERNAL_SERVER_ERRORResponse());
         }
     }
 
-    @DeleteMapping("/deleteAll")
-    public ResponseEntity<?> deleteAllFournisseurs() {
-        Map<String, Object> map = new LinkedHashMap<>();
+    private Map<String, Object> createDataNotFoundResponse() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", 0);
+        response.put("message", "Data is not found");
+        return response;
+    }
+    private Map<String, Object> create_INTERNAL_SERVER_ERRORResponse() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", 0);
+        response.put("message", "An error occurred while processing the request");
+        return response;
+    }
+    private Map<String, Object> createResponse(Object fournisseur) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", 1);
+        response.put("data", fournisseur);
+        return response;
+    }
+
+    /**
+     * Endpoint pour générer un PDF avec les détails d'un fournisseur et ses marchés
+     * @param numFourn Le numéro du fournisseur
+     * @param supportArabic Support arabe activé
+     * @param fontFamily Famille de police
+     * @param encoding Encodage des caractères
+     * @return Le fichier PDF en tant que réponse HTTP
+     */
+    @RequestMapping(value = "/export/pdf/{numFourn}", method = RequestMethod.GET)
+    public ResponseEntity<byte[]> exportFournisseurDetailsToPDF(
+            @PathVariable String numFourn,
+            @RequestParam(value = "supportArabic", defaultValue = "true") boolean supportArabic,
+            @RequestParam(value = "fontFamily", defaultValue = "arabic") String fontFamily,
+            @RequestParam(value = "encoding", defaultValue = "UTF-8") String encoding) {
         try {
-            fournisseurService.deleteAll();
-            map.put("status", 1);
-            map.put("message", "All records are deleted successfully!");
-            return new ResponseEntity<>(map, HttpStatus.OK);
-        } catch (Exception ex) {
-            map.put("status", 0);
-            map.put("message", "An error occurred while processing the request");
-            return new ResponseEntity<>(map, HttpStatus.INTERNAL_SERVER_ERROR);
+            // Log des paramètres reçus
+            System.out.println("🔄 Génération PDF pour fournisseur: " + numFourn);
+            System.out.println("📋 Support arabe: " + supportArabic);
+            System.out.println("🔤 Famille de police: " + fontFamily);
+            System.out.println("🔤 Encodage: " + encoding);
+            
+            byte[] pdfBytes = fournisseurService.generateFournisseurDetailsPDF(numFourn);
+            
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(new MediaType("application", "pdf"));
+            headers.setContentDispositionFormData("attachment", "Fournisseur_" + numFourn + ".pdf");
+            headers.setCacheControl("must-revalidate, post-check=0, pre-check=0");
+            
+            // Ajouter des headers pour le support arabe
+            if (supportArabic) {
+                headers.add("X-Arabic-Support", "enabled");
+                headers.add("X-Font-Family", fontFamily);
+                headers.add("X-Encoding", encoding);
+            }
+            
+            System.out.println("✅ PDF généré avec succès pour le fournisseur: " + numFourn);
+            return new ResponseEntity<>(pdfBytes, headers, HttpStatus.OK);
+            
+        } catch (Exception e) {
+            logger.error("❌ Erreur lors de la génération du PDF: {}", e.getMessage(), e);
+            return new ResponseEntity<>(HttpStatus.INTERNAL_SERVER_ERROR);
         }
     }
 }
+
+
